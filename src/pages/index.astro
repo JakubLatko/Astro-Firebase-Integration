@@ -1,0 +1,16 @@
+---
+import PublicLayout from "@layouts/PublicLayout.astro";
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+---
+
+<WrapperLayout title="Home">
+	<PublicLayout>
+		<main class="main">
+			<h1>
+				{import.meta.env.FIREBASE_PROJECT_ID}
+				Your unprotected, public content goes here. <br /> Its just a landing
+				page, you know how it works.
+			</h1>
+		</main>
+	</PublicLayout>
+</WrapperLayout>

@@ -1,0 +1,253 @@
+---
+import AccountLayout from "@layouts/AccountLayout.astro";
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+import { frontmatterUser } from "@lib/auth/get-user";
+
+const user = await frontmatterUser(Astro);
+if (user instanceof Response || !user) {
+	return Astro.redirect("/sign-in");
+}
+---
+
+<WrapperLayout title="Profile">
+	<AccountLayout>
+		<main class="main">
+			<div>
+				<h1>Profile</h1>
+				<p>User's email address: <strong>{user.email}</strong></p>
+				<p>
+					Is user's email address verified: <strong>
+						{
+							user.emailVerified === true
+								? "verified"
+								: "not verified"
+						}</strong
+					>
+				</p>
+				<p>
+					User's account creation date: <strong
+						>{user.metadata.creationTime}</strong
+					>
+				</p>
+				<p>
+					Profile picture url: <strong
+						>{user.photoURL ?? "no photo url"}</strong
+					>
+				</p>
+			</div>
+			<div class="resetAndDeleteBtns">
+				<button class="deleteBtn">Delete account </button>
+			</div>
+
+			<form class="form" id="changePasswordForm">
+				<h2>Change your password</h2>
+				<label for="currentPassword">Current password</label>
+				<input
+					type="password"
+					id="currentPassword"
+					name="currentPassword"
+					required
+				/>
+				<label for="newPassword">New password</label>
+				<input
+					type="password"
+					id="newPassword"
+					name="newPassword"
+					required
+				/>
+				<label for="repeatedNewPassword">Repeat new password</label>
+				<input
+					type="password"
+					name="repeatedNewPassword"
+					id="repeatedNewPassword"
+					required
+				/>
+				<button type="submit">Change password</button>
+			</form>
+			<p>
+				Password must: <br /> - be at least 8 characters, <br /> - contain
+				at least one special character, <br /> - contain at least one digit
+				<br /> - contain at least one uppercase letter.
+			</p>
+		</main>
+	</AccountLayout>
+</WrapperLayout>
+
+<script>
+	import DOMPurify from "dompurify";
+	import { toast } from "react-toastify";
+	import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+	import { app } from "@firebase/client";
+	import { FirebaseError } from "firebase/app";
+	document.addEventListener("astro:page-load", async () => {
+		const auth = getAuth(app);
+		const user = auth.currentUser;
+
+		///////DELETE USER////////
+		const deleteBtn = document.querySelector(".deleteBtn");
+		deleteBtn?.addEventListener("click", async () => {
+			try {
+				const res = await fetch("/api/auth/delete-user", {
+					method: "DELETE",
+					headers: {
+						"Content-Type": "application/json",
+					},
+				});
+				if (res.status == 200) {
+					window.location.href = "/";
+				} else {
+					toast.error("Something went wrong");
+				}
+			} catch (error) {
+				toast.error("Something went wrong: " + error);
+			}
+		});
+
+		//////CHANGE PASSWORD////////
+
+		const changePasswordForm = document.querySelector(
+			"#changePasswordForm"
+		) as HTMLFormElement;
+		const currentPasswordInput = document.querySelector(
+			"#currentPassword"
+		) as HTMLInputElement;
+
+		const newPasswordInput = document.querySelector(
+			"#newPassword"
+		) as HTMLInputElement;
+
+		const repeatedNewPasswordInput = document.querySelector(
+			"#repeatedNewPassword"
+		) as HTMLInputElement;
+
+		changePasswordForm.addEventListener("submit", async (e) => {
+			e.preventDefault();
+			const currentPassword = currentPasswordInput.value;
+			const newPassword = newPasswordInput.value;
+			const repeatedNewPassword = repeatedNewPasswordInput.value;
+
+			if (!currentPassword || !newPassword || !repeatedNewPassword) {
+				toast.error("Please fill in all fields");
+				return;
+			}
+			if (newPassword !== repeatedNewPassword) {
+				toast.error("Passwords do not match");
+				return;
+			}
+
+			const pureCurrentPassword = DOMPurify.sanitize(currentPassword);
+			const pureNewPassword = DOMPurify.sanitize(newPassword);
+			const pureRepeatedNewPassword =
+				DOMPurify.sanitize(repeatedNewPassword);
+			if (
+				!pureCurrentPassword ||
+				!pureNewPassword ||
+				!pureRepeatedNewPassword
+			) {
+				toast.error("Invalid password data");
+				return;
+			}
+			if (pureCurrentPassword === pureNewPassword) {
+				toast.error("Old password and new password must be different");
+				return;
+			}
+			if (
+				pureNewPassword.length < 8 ||
+				pureRepeatedNewPassword.length < 8
+			) {
+				toast.error("Password is too short");
+				return;
+			}
+			if (
+				pureNewPassword.length > 64 ||
+				pureRepeatedNewPassword.length > 64
+			) {
+				toast.error("Password is too long");
+				return;
+			}
+
+			if (
+				!/[!@#$%^&*]/.test(pureNewPassword) ||
+				!/[!@#$%^&*]/.test(pureRepeatedNewPassword)
+			) {
+				toast.error(
+					"Password must contain at least one special character"
+				);
+				return;
+			}
+			//Check if the passwords contain at least one number
+			if (
+				!/\d/.test(pureNewPassword) ||
+				!/\d/.test(pureRepeatedNewPassword)
+			) {
+				toast.error("Password must contain at least one digit");
+				return;
+			}
+
+			//Check if the passwords contain at least one uppercase letter
+			if (
+				!/[A-Z]/.test(pureNewPassword) ||
+				!/[A-Z]/.test(pureRepeatedNewPassword)
+			) {
+				toast.error(
+					"Password must contain at least one uppercase letter"
+				);
+				return;
+			}
+
+			try {
+				const email = localStorage.getItem("usersEmail");
+				if (!email) {
+					throw new Error("Email not found");
+				}
+
+				const userCredential = await signInWithEmailAndPassword(
+					auth,
+					email,
+					pureCurrentPassword
+				);
+
+				if (userCredential.user.uid) {
+					const res = await fetch("/api/auth/change-password", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({
+							newPassword: pureNewPassword,
+						}),
+					});
+
+					if (res.status == 200) {
+						toast.success(
+							"Password changed, you will be logged out"
+						);
+						setTimeout(async () => {
+							const res = await fetch("/api/auth/sign-out", {
+								method: "GET",
+							});
+							if (res.status == 200) {
+								window.location.href = "/sign-in";
+							}
+							window.location.href = "/sign-in";
+						}, 3000);
+					} else {
+						toast.error("Something went wrong");
+					}
+				} else {
+					throw new Error("User not found");
+				}
+			} catch (error) {
+				if (error instanceof FirebaseError) {
+					toast.error(error.message);
+				} else if (error instanceof Error) {
+					toast.error(error.message);
+				} else {
+					if (typeof error === "string") {
+						toast.error(error);
+					}
+				}
+			}
+		});
+	});
+</script>

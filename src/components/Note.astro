@@ -1,0 +1,13 @@
+---
+interface Props {
+	doc: FirebaseFirestore.QueryDocumentSnapshot<
+		FirebaseFirestore.DocumentData,
+		FirebaseFirestore.DocumentData
+	>;
+}
+const { doc } = Astro.props;
+---
+
+<div class="noteContainer">
+	<a class="noteLink" href={`/p/${doc.id}`}>{doc.id}</a>
+</div>

@@ -1,0 +1,49 @@
+---
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+import AccountLayout from "@layouts/AccountLayout.astro";
+---
+
+<WrapperLayout title="Verify email">
+	<AccountLayout>
+		<main class="main">
+			<h1>Verify your email</h1>
+			<button class="verificationBtn">Send verification link</button>
+		</main>
+	</AccountLayout>
+</WrapperLayout>
+
+<script>
+	import { sendEmailVerification } from "firebase/auth";
+	import { toast } from "react-toastify";
+	import { getAuth } from "firebase/auth";
+	import { app } from "@firebase/client";
+
+	document.addEventListener("astro:page-load", () => {
+		const auth = getAuth(app);
+
+		const sendVerificationLinkBtn = document.querySelector(
+			".verificationBtn"
+		) as HTMLButtonElement;
+
+		sendVerificationLinkBtn.addEventListener("click", async () => {
+			try {
+				if (!auth.currentUser) {
+					toast.error("No user found");
+					return;
+				}
+
+				if (auth.currentUser.emailVerified) {
+					toast.error("Email already verified");
+					return;
+				}
+				await sendEmailVerification(auth.currentUser, {
+					url: "http://localhost:4321",
+					handleCodeInApp: true,
+				});
+				toast.success("Verification email sent!");
+			} catch {
+				toast.error("Something went wrong");
+			}
+		});
+	});
+</script>

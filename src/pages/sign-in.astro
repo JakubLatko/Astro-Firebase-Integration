@@ -1,0 +1,96 @@
+---
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+import PublicLayout from "@layouts/PublicLayout.astro";
+import { UserRecord } from "firebase-admin/auth";
+import { frontmatterUser } from "@lib/auth/get-user";
+
+const user = await frontmatterUser(Astro);
+if (user instanceof UserRecord) {
+	return Astro.redirect("/p/dashboard");
+}
+---
+
+<WrapperLayout title="Sign in">
+	<PublicLayout>
+		<main class="main">
+			<h1>Sign in</h1>
+			<form class="form">
+				<label for="email" for="email">Email</label>
+				<input type="email" name="email" id="email" required />
+				<label for="password">Password</label>
+				<input type="password" name="password" id="password" required />
+				<button type="submit">Login</button>
+			</form>
+			<p>New here? <a href="/register">Create an account</a></p>
+			<a href="/forgot-password">I forgot my password</a>
+		</main>
+	</PublicLayout>
+</WrapperLayout>
+
+<script>
+	import DOMPurify from "dompurify";
+	import {
+		getAuth,
+		browserSessionPersistence,
+		signInWithEmailAndPassword,
+	} from "firebase/auth";
+	import { app } from "@firebase/client";
+	import { toast } from "react-toastify";
+
+	document.addEventListener("astro:page-load", () => {
+		const form = document.querySelector("form") as HTMLFormElement;
+		const email = document.querySelector<HTMLInputElement>("#email");
+		const password = document.querySelector<HTMLInputElement>("#password");
+
+		const auth = getAuth(app);
+		auth.setPersistence(browserSessionPersistence);
+
+		form.addEventListener("submit", async (e) => {
+			e.preventDefault();
+
+			if (!email || !password) {
+				toast.error("Please fill all the fields");
+				return;
+			}
+
+			//Sanitize the inputs
+			const pureEmail = DOMPurify.sanitize(email.value);
+			const purePassword = DOMPurify.sanitize(password.value);
+
+			if (!pureEmail || !purePassword) {
+				toast.error("An error occured");
+				return;
+			}
+			try {
+				const userCredentials = await signInWithEmailAndPassword(
+					auth,
+					pureEmail,
+					purePassword
+				);
+
+				if (!userCredentials) {
+					toast.error("An error occured");
+					return;
+				}
+
+				const idToken = await userCredentials.user.getIdToken();
+
+				const res = await fetch("/api/auth/sign-in", {
+					method: "GET",
+					headers: {
+						Authorization: `Bearer ${idToken}`,
+					},
+				});
+
+				if (res.ok) {
+					window.location.href = "/p/dashboard";
+					localStorage.setItem("usersEmail", pureEmail);
+				} else {
+					toast.error("An error occured");
+				}
+			} catch {
+				toast.error("An error occured");
+			}
+		});
+	});
+</script>

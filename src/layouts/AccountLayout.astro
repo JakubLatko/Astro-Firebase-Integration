@@ -1,0 +1,45 @@
+---
+import { frontmatterUser } from "@lib/auth/get-user";
+const user = await frontmatterUser(Astro);
+if (!user || user instanceof Response) {
+	return new Response.redirect("/sign-in");
+}
+---
+
+<header>
+	<nav>
+		<ul>
+			<li><a href="/">Home</a></li>
+			<li><a href="/p/dashboard">Dashboard</a></li>
+			<li><a href="/p/profile">Profile</a></li>
+		</ul>
+		<div>
+			{user.email}
+			<button class="logoutBtn">Logout</button>
+		</div>
+	</nav>
+</header>
+<slot />
+
+<script>
+	import { getAuth } from "firebase/auth";
+	import { app } from "@firebase/client";
+	import { toast } from "react-toastify";
+
+	document.addEventListener("astro:page-load", () => {
+		try {
+			const auth = getAuth(app);
+			const button = document.querySelector(".logoutBtn");
+			button?.addEventListener("click", async () => {
+				await fetch("/api/auth/sign-out", {
+					method: "GET",
+				});
+				window.location.href = "/";
+				auth.signOut();
+				toast.error("Succesfully logged out");
+			});
+		} catch (error) {
+			toast.error("Something went wrong: " + error);
+		}
+	});
+</script>

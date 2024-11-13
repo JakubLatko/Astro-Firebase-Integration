@@ -1,0 +1,100 @@
+---
+import { app } from "@firebase/server";
+import { getFirestore } from "firebase-admin/firestore";
+import AccountLayout from "@layouts/AccountLayout.astro";
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+import Note from "@components/Note.astro";
+import { frontmatterUser } from "@lib/auth/get-user";
+
+const db = getFirestore(app);
+const user = await frontmatterUser(Astro);
+if (user instanceof Response || !user) {
+	return Astro.redirect("/sign-in");
+}
+let notes;
+
+try {
+	notes = await db
+		.collection("users")
+		.doc(user.uid)
+		.collection("notes")
+		.get();
+} catch (error) {
+	return Astro.redirect("/p/dashboard");
+}
+---
+
+<WrapperLayout title="Dashboard">
+	<AccountLayout>
+		<main class="main">
+			<div>
+				<form class="form" id="addingNoteForm">
+					<label for="noteTitle">Note title</label>
+					<input
+						type="text"
+						name="noteTitle"
+						id="noteTitle"
+						minlength="1"
+						required
+						maxlength="64"
+					/>
+					<button type="submit">Add note</button>
+				</form>
+			</div>
+			<div class="notes-wrapper">
+				<h2>YOUR NOTES:</h2>
+				{notes ? notes.docs.map((doc) => <Note doc={doc} />) : null}
+			</div>
+		</main>
+	</AccountLayout>
+</WrapperLayout>
+<script>
+	import DOMPurify from "dompurify";
+	import { toast } from "react-toastify";
+
+	document.addEventListener("astro:page-load", () => {
+		const addNoteForm =
+			document.querySelector<HTMLFormElement>("#addingNoteForm");
+		const noteTitle =
+			document.querySelector<HTMLInputElement>("#noteTitle");
+		addNoteForm?.addEventListener("submit", async (e) => {
+			e.preventDefault();
+
+			if (!noteTitle || !noteTitle.value) {
+				toast.error("Please fill in all fields");
+				return;
+			}
+
+			//Sanitize input
+			const pureTitle = DOMPurify.sanitize(noteTitle.value);
+
+			if (pureTitle.length > 64) {
+				toast("Title is too long", {
+					type: "error",
+					hideProgressBar: true,
+				});
+				return;
+			}
+			try {
+				const res = await fetch("/api/db/create-note", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						noteTitle: pureTitle,
+					}),
+				});
+				if (res.status == 200) {
+					document.startViewTransition(() => {
+						window.location.href = `/p/${noteTitle?.value}`;
+					});
+				} else {
+					toast.error("Something went wrong: " + res.statusText);
+				}
+			} catch (error) {
+				toast.error("Something went wrong: " + error);
+			}
+		});
+	});
+</script>

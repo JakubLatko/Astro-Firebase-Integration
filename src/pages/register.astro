@@ -1,0 +1,162 @@
+---
+import PublicLayout from "@layouts/PublicLayout.astro";
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+import { frontmatterUser } from "@lib/auth/get-user";
+import { UserRecord } from "firebase-admin/auth";
+
+const user = await frontmatterUser(Astro);
+if (user instanceof UserRecord) {
+	return Astro.redirect("/p/dashboard");
+}
+---
+
+<WrapperLayout title="Register">
+	<PublicLayout>
+		<main class="main">
+			<h1>Register</h1>
+			<p>Already have an account? <a href="/sign-in">Sign in</a></p>
+			<form id="registerForm" class="form">
+				<label for="email" for="email">Email</label>
+				<input
+					minlength="1"
+					maxlength="64"
+					required
+					type="email"
+					name="email"
+					id="email"
+				/>
+				<label for="password">Password</label>
+				<input
+					minlength="1"
+					maxlength="64"
+					required
+					type="password"
+					name="password"
+					id="password"
+				/>
+				<label for="password">Repeat password</label>
+				<input
+					minlength="1"
+					maxlength="64"
+					required
+					type="password"
+					name="passwordRepeat"
+					id="passwordRepeat"
+				/>
+				<button type="submit">Login</button>
+
+				<p>
+					Password must: <br /> - be at least 8 characters, <br /> - contain
+					at least one special character, <br /> - contain at least one
+					digit <br /> - contain at least one uppercase letter.
+				</p>
+			</form>
+		</main>
+	</PublicLayout>
+</WrapperLayout>
+
+<script>
+	import { isDisposableEmail } from "disposable-email-domains-js";
+	import DOMPurify from "dompurify";
+	import { toast } from "react-toastify";
+
+	document.addEventListener("astro:page-load", () => {
+		const form = document.querySelector<HTMLFormElement>("#registerForm");
+		const email = document.querySelector<HTMLInputElement>("#email");
+		const password = document.querySelector<HTMLInputElement>("#password");
+		const passwordRepeat =
+			document.querySelector<HTMLInputElement>("#passwordRepeat");
+
+		form?.addEventListener("submit", async (e) => {
+			e.preventDefault();
+
+			if (!email || !password || !passwordRepeat) {
+				toast.error("Please fill in all fields");
+				return;
+			}
+
+			//Sanitize the inputs
+			const pureEmail = DOMPurify.sanitize(email.value);
+			const purePassword = DOMPurify.sanitize(password.value);
+			const purePasswordRepeat = DOMPurify.sanitize(passwordRepeat.value);
+
+			//Check if the passwords are at least 8 characters long
+			if (purePassword.length < 8 || purePasswordRepeat.length < 8) {
+				toast.error("Password is too short");
+				return;
+			}
+
+			//Check if the passwords are at least 8 characters long
+			if (purePassword.length > 64 || purePasswordRepeat.length > 64) {
+				toast.error("Password is too long");
+				return;
+			}
+			//Check if the passwords contain at least one special character
+			if (
+				!/[!@#$%^&*]/.test(purePassword) ||
+				!/[!@#$%^&*]/.test(purePasswordRepeat)
+			) {
+				toast.error(
+					"Password must contain at least one special character"
+				);
+				return;
+			}
+			//Check if the passwords contain at least one number
+			if (!/\d/.test(purePassword) || !/\d/.test(purePasswordRepeat)) {
+				toast.error("Password must contain at least one digit");
+				return;
+			}
+
+			//Check if the passwords contain at least one uppercase letter
+			if (
+				!/[A-Z]/.test(purePassword) ||
+				!/[A-Z]/.test(purePasswordRepeat)
+			) {
+				toast.error(
+					"Password must contain at least one uppercase letter"
+				);
+				return;
+			}
+
+			//Check if the passwords match
+			if (purePassword !== purePasswordRepeat) {
+				toast.error("Passwords do not match");
+				return;
+			}
+			//Check if the email address is disposable
+			if (isDisposableEmail(pureEmail)) {
+				toast.error("Email is disposable. Use real email address.");
+				return;
+			}
+			//final check if all data is correct
+			if (!email || !password) return;
+			try {
+				const res = await fetch("/api/register/register", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						email: pureEmail,
+						password: purePassword,
+					}),
+				});
+				if (res.ok) {
+					toast.success(
+						"Account created successfully. You will be redirected to sign-in page shortly."
+					);
+
+					setTimeout(() => {
+						window.location.href = "/sign-in";
+					}, 3000);
+				} else {
+					toast.error(
+						"An error occurred while creating your account"
+					);
+				}
+			} catch {
+				toast.error("An error occurred while creating your account");
+			}
+		});
+	});
+</script>

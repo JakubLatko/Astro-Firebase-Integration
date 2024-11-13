@@ -1,0 +1,43 @@
+---
+import Toasty from "@components/Toast";
+import { ViewTransitions } from "astro:transitions";
+interface Props {
+	title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="description" content="Astro description" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+		<ViewTransitions />
+	</head>
+	<slot />
+	<Toasty client:load />
+	<style is:global>
+		@import url("../sass/index.scss");
+
+		:root {
+			--background: #1a1a1a;
+			--header: #333333;
+			--text: #e6e6e6;
+			--input: #999999;
+			--orange: orange;
+		}
+		html {
+			font-family: system-ui, sans-serif;
+			background: var(--background);
+			color: var(--text);
+		}
+		body {
+			display: flex;
+			flex-direction: column;
+		}
+	</style>
+</html>

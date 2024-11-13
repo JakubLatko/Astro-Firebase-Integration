@@ -1,0 +1,256 @@
+---
+import AccountLayout from "@layouts/AccountLayout.astro";
+import WrapperLayout from "@layouts/WrapperLayout.astro";
+import { getFirestore } from "firebase-admin/firestore";
+import { app } from "@firebase/server";
+import { decryptData } from "@lib/encryption/decryptData";
+import { marked } from "marked";
+import { frontmatterUser } from "@lib/auth/get-user";
+
+const db = getFirestore(app);
+const user = await frontmatterUser(Astro);
+
+const noteFromParams = Astro.params;
+
+if (!noteFromParams.note || !user || user instanceof Response) {
+	return (window.location.href = "/p/dashboard");
+}
+
+const noteFromDB = await db
+	.collection("users")
+	.doc(user.uid)
+	.collection("notes")
+	.doc(noteFromParams.note)
+	.get();
+
+if (!noteFromDB.exists) {
+	return Astro.redirect("/404");
+}
+
+let decryptedContent = decryptData(noteFromDB.data()?.content);
+---
+
+<WrapperLayout title={noteFromParams.note}>
+	<AccountLayout>
+		<div class="topHeader">
+			<div class="noteHeader">
+				<h2>{noteFromParams.note}</h2>
+				<button
+					onclick="document.querySelector('.editNoteDialog').showModal()">
+					Edit note title
+				</button>
+			</div>
+
+			<img class="savingImage" src="/saved.svg" alt="" />
+
+			<button class="deleteBtn">Delete</button>
+		</div>
+		<main class="main-note">
+			<textarea
+				name="editArea"
+				id="editArea"
+				set:html={decryptedContent}
+			/>
+			<div
+				class="markedContent"
+				set:html={marked(decryptedContent).toString()}
+			/>
+		</main>
+
+		<dialog class="editNoteDialog">
+			<button onclick="document.querySelector('.editNoteDialog').close()"
+				>Close modal</button
+			>
+			<form class="editNoteForm">
+				<label for="noteTitle">Note title</label>
+				<input
+					type="text"
+					name="noteTitle"
+					id="noteTitle"
+					required
+					value={noteFromParams.note}
+				/>
+				<button type="submit">Save</button>
+			</form>
+		</dialog>
+	</AccountLayout>
+</WrapperLayout>
+
+<script>
+	import DOMPurify from "dompurify";
+	import { marked } from "marked";
+	import { toast } from "react-toastify";
+
+	document.addEventListener("astro:page-load", async () => {
+		//Delete note
+		const deleteBtn = document.querySelector(".deleteBtn");
+		const noteId = window.location.pathname.split("/").pop();
+
+		if (typeof noteId !== "string" || !deleteBtn || !noteId) {
+			return;
+		}
+
+		const decodedNoteId = decodeURIComponent(noteId);
+		deleteBtn.addEventListener("click", async () => {
+			try {
+				const res = await fetch("/api/db/delete-note", {
+					method: "DELETE",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						noteId: decodedNoteId,
+					}),
+				});
+				if (res.status == 200) {
+					toast.success("Note deleted, you will be redirected");
+					setTimeout(() => {
+						window.location.href = "/p/dashboard";
+					}, 3000);
+				} else {
+					toast.error("Something went wrong");
+				}
+			} catch {
+				toast.error("Something went wrong");
+			}
+		});
+		//Save note content
+
+		const markedContentArea =
+			document.querySelector<HTMLDivElement>(".markedContent");
+
+		const editArea =
+			document.querySelector<HTMLTextAreaElement>("#editArea");
+		if (!editArea || !markedContentArea) return;
+
+		editArea?.addEventListener("input", async () => {
+			const markedContent = await marked(editArea?.value ?? "");
+			const savingImages =
+				document.querySelector<HTMLImageElement>(".savingImage");
+			markedContentArea.innerHTML = markedContent;
+
+			debounceSaveNote();
+			if (!savingImages) return;
+			savingImages.src = "/spinner.svg";
+		});
+
+		let timeoutId: NodeJS.Timeout;
+
+		function debounceSaveNote() {
+			clearTimeout(timeoutId);
+
+			timeoutId = setTimeout(() => {
+				console.log("Activated");
+				saveNoteToFirebase();
+			}, 3000);
+		}
+
+		async function saveNoteToFirebase() {
+			let noteContent = editArea?.value;
+			if (!noteContent) {
+				noteContent = "";
+			}
+			const sanitizedContent = DOMPurify.sanitize(noteContent);
+
+			//this promise is there only, so toast can show the user if his progress is being saved
+			//so its purely cosmetic, feel free to remove it
+			const savePromise = new Promise(async (resolve, reject) => {
+				try {
+					const res = await fetch("/api/db/save-note", {
+						method: "PUT",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({
+							noteTitle: decodedNoteId,
+							noteContent: sanitizedContent,
+						}),
+					});
+					if (res.ok) {
+						resolve(res);
+						const savingImages =
+							document.querySelector<HTMLImageElement>(
+								".savingImage"
+							);
+						if (!savingImages) return;
+						savingImages.src = "/saved.svg";
+					} else {
+						const data = await res.json();
+						reject(data.message);
+					}
+				} catch (error) {
+					reject(error);
+				}
+			});
+
+			toast.promise(
+				savePromise,
+				{
+					pending: "Saving",
+					success: "Saved",
+					error: "Something went wrong",
+				},
+				{
+					hideProgressBar: true,
+				}
+			);
+		}
+
+		// Edit note title
+		const editNoteInput =
+			document.querySelector<HTMLInputElement>("#noteTitle");
+		const editNoteForm =
+			document.querySelector<HTMLFormElement>(".editNoteForm");
+
+		editNoteForm?.addEventListener("submit", async (e) => {
+			e.preventDefault();
+			const noteTitle = editNoteInput?.value;
+			if (!noteTitle) {
+				toast.error("Please fill the title field");
+				return;
+			}
+
+			const pureTitle = DOMPurify.sanitize(noteTitle);
+			const pureContent = DOMPurify.sanitize(editArea?.value ?? "");
+			if (!pureTitle) {
+				toast.error("Please fill the title field");
+				return;
+			}
+			if (pureTitle === decodedNoteId) {
+				toast.error("Old title and new title are identical");
+				return;
+			}
+
+			if (pureTitle.length > 64) {
+				toast.error("Title is too long");
+				return;
+			}
+
+			try {
+				const res = await fetch("/api/db/edit-note-title", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						oldNoteTitle: decodedNoteId,
+						newNoteTitle: pureTitle,
+						noteContent: pureContent,
+					}),
+				});
+
+				if (res.ok) {
+					toast.success("Title changed");
+					document.startViewTransition(() => {
+						window.location.href = `/p/${pureTitle}`;
+					});
+				} else {
+					const body = await res.json();
+					toast.error(body);
+				}
+			} catch (error) {
+				toast.error("Something went wrong: " + error);
+			}
+		});
+	});
+</script>
